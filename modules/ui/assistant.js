@@ -790,14 +790,19 @@ export function uiAssistant(context) {
             var unknown = t('inspector.unknown');
 
             if (!d) return unknown;
-            var errorType = d.error_type;
-            var et = dataEn.QA.osmose.error_types[errorType];
 
-            if (et && et.title) {
-                return t('QA.osmose.error_types.' + errorType + '.title');
-            } else {
-                return unknown;
+            // Some errors fall back to their category for strings
+            var i, et;
+            var keys = [d.error_type, d.item];
+            for (i = 0; i < 2; i++) {
+                et = dataEn.QA.osmose.error_types[keys[i]];
+
+                if (et && et.title) {
+                    return t('QA.osmose.error_types.' + keys[i] + '.title');
+                }
             }
+
+            return unknown;
         }
 
         var panel = {
@@ -824,7 +829,7 @@ export function uiAssistant(context) {
                     error.service,
                     'error_id-' + error.id,
                     'error_type-' + error.error_type,
-                    'category-' + error.category
+                    'category-' + error.item
                 ].join(' '));
 
             svgEnter

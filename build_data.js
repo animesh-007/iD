@@ -72,7 +72,8 @@ function buildData() {
     'fas-i-cursor': {},
     'fas-lock': {},
     'fas-long-arrow-alt-right': {},
-    'fas-th-list': {}
+    'fas-th-list': {},
+    'far-clone': {}
   };
 
   // The Noun Project icons used
