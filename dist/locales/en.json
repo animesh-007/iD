@@ -7159,6 +7159,10 @@
                     "name": "Monument",
                     "terms": ""
                 },
+                "historic/pillory": {
+                    "name": "Historic Pillory",
+                    "terms": "military"
+                },
                 "historic/ruins": {
                     "name": "Ruins",
                     "terms": ""
