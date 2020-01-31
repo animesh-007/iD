@@ -13,7 +13,7 @@ export function uiFeatureInfo(context) {
         var hiddenList = features.hidden().map(function(k) {
             if (stats[k]) {
                 count += stats[k];
-                return String(stats[k]) + ' ' + t('feature.' + k + '.description');
+                return String(stats[k]) + ' ' + features.features()[k].title;
             }
         }).filter(Boolean);
 
@@ -35,7 +35,9 @@ export function uiFeatureInfo(context) {
                 .call(tooltipBehavior)
                 .on('click', function() {
                     tooltipBehavior.hide();
+
                     d3_event.preventDefault();
+
                     // open the Map Data pane
                     context.ui().togglePanes(d3_select('.map-panes .map-data-pane'));
                 });

@@ -8,6 +8,7 @@ import { presetCollection } from './collection';
 import { presetField } from './field';
 import { presetPreset } from './preset';
 import { utilArrayUniq, utilRebind } from '../util';
+import { groupManager } from '../entities/group_manager';
 
 export { presetCategory };
 export { presetCollection };
@@ -19,13 +20,13 @@ export function presetIndex(context) {
     // a presetCollection with methods for
     // loading new data and returning defaults
 
-    var dispatch = d3_dispatch('recentsChange');
+    var dispatch = d3_dispatch('recentsChange', 'favoritePreset');
 
     var all = presetCollection([]);
     var _defaults = { area: all, line: all, point: all, vertex: all, relation: all };
     var _fields = {};
     var _universal = [];
-    var _recents;
+    var _favorites, _recents;
     // presets that the user can add
     var _addablePresetIDs;
 
@@ -184,7 +185,7 @@ export function presetIndex(context) {
         }, {});
     };
 
-    all.build = function(d, visible) {
+    all.build = function(d, addable) {
         if (d.fields) {
             Object.keys(d.fields).forEach(function(id) {
                 var f = d.fields[id];
@@ -200,11 +201,11 @@ export function presetIndex(context) {
             Object.keys(d.presets).forEach(function(id) {
                 var p = d.presets[id];
                 var existing = all.index(id);
-                var isVisible = typeof visible === 'function' ? visible(id, p) : visible;
+                var isAddable = typeof addable === 'function' ? addable(id, p) : addable;
                 if (existing !== -1) {
-                    all.collection[existing] = presetPreset(id, p, _fields, isVisible, rawPresets);
+                    all.collection[existing] = presetPreset(id, p, _fields, isAddable, rawPresets);
                 } else {
-                    all.collection.push(presetPreset(id, p, _fields, isVisible, rawPresets));
+                    all.collection.push(presetPreset(id, p, _fields, isAddable, rawPresets));
                 }
             });
         }
@@ -254,20 +255,21 @@ export function presetIndex(context) {
 
     all.init = function(addablePresetIDs) {
         all.collection = [];
+        _favorites = null;
         _recents = null;
         _addablePresetIDs = addablePresetIDs;
         _fields = {};
         _universal = [];
         _index = { point: {}, vertex: {}, line: {}, area: {}, relation: {} };
 
-        var show = true;
+        var addable = true;
         if (addablePresetIDs) {
-            show = function(presetID) {
+            addable = function(presetID) {
                 return addablePresetIDs.indexOf(presetID) !== -1;
             };
         }
 
-        return all.build(data.presets, show);
+        return all.build(data.presets, addable);
     };
 
 
@@ -276,7 +278,10 @@ export function presetIndex(context) {
         _defaults = { area: all, line: all, point: all, vertex: all, relation: all };
         _fields = {};
         _universal = [];
+        _favorites = null;
         _recents = null;
+
+        groupManager.clearCachedPresets();
 
         // Index of presets by (geometry, tag key).
         _index = {
@@ -294,8 +299,11 @@ export function presetIndex(context) {
         all.reset();
         d3_json(external)
             .then(function(externalPresets) {
-                all.build(data.presets, false);    // make default presets hidden to begin
-                all.build(externalPresets, true);  // make the external visible
+                all.build(data.presets, false);    // load the default presets as non-addable to start
+
+                _addablePresetIDs = externalPresets.presets && Object.keys(externalPresets.presets);
+
+                all.build(externalPresets, true);  // then load the external presets as addable
             })
             .catch(function() {
                 all.init();
@@ -328,44 +336,71 @@ export function presetIndex(context) {
         })));
     };
 
-    function RibbonItem(preset, geometry, source) {
+    function RibbonItem(preset, source) {
         var item = {};
         item.preset = preset;
-        item.geometry = geometry;
         item.source = source;
 
+        item.isFavorite = function() {
+            return item.source === 'favorite';
+        };
         item.isRecent = function() {
             return item.source === 'recent';
         };
-        item.matches = function(preset, geometry) {
-            return item.preset.id === preset.id && item.geometry === geometry;
+        item.matches = function(preset) {
+            return item.preset.id === preset.id;
         };
         item.minified = function() {
             return {
-                pID: item.preset.id,
-                geom: item.geometry
+                pID: item.preset.id
             };
         };
         return item;
     }
 
     function ribbonItemForMinified(d, source) {
-        if (d && d.pID && d.geom) {
+        if (d && d.pID) {
             var preset = all.item(d.pID);
             if (!preset) return null;
-
-            var geom = d.geom;
-            // treat point and vertex features as one geometry
-            if (geom === 'vertex') geom = 'point';
-
-            // iD's presets could have changed since this was saved,
-            // so make sure it's still valid.
-            if (preset.matchGeometry(geom) || (geom === 'point' && preset.matchGeometry('vertex'))) {
-                return RibbonItem(preset, geom, source);
-            }
+            return RibbonItem(preset, source);
         }
         return null;
     }
+
+    function setFavorites(items) {
+        _favorites = items;
+        var minifiedItems = items.map(function(d) { return d.minified(); });
+        context.storage('preset_favorites', JSON.stringify(minifiedItems));
+
+        // call update
+        dispatch.call('favoritePreset');
+    }
+
+    all.getGenericRibbonItems = function() {
+        return ['point', 'line', 'area'].map(function(id) {
+            return RibbonItem(all.item(id), 'generic');
+        });
+    };
+
+    all.getFavorites = function() {
+        if (!_favorites) {
+
+            // fetch from local storage
+            var rawFavorites = JSON.parse(context.storage('preset_favorites'));
+
+            if (!rawFavorites) {
+                rawFavorites = [];
+                context.storage('preset_favorites', JSON.stringify(rawFavorites));
+            }
+
+            _favorites = rawFavorites.reduce(function(output, d) {
+                var item = ribbonItemForMinified(d, 'favorite');
+                if (item && item.preset.addable()) output.push(item);
+                return output;
+            }, []);
+        }
+        return _favorites;
+    };
 
     function setRecents(items) {
         _recents = items;
@@ -375,21 +410,58 @@ export function presetIndex(context) {
         dispatch.call('recentsChange');
     }
 
+    all.getAddable = function() {
+        if (!_addablePresetIDs) return [];
+
+        return _addablePresetIDs.map(function(id) {
+            var preset = all.item(id);
+            if (preset) {
+                return RibbonItem(preset, 'addable');
+            }
+        }).filter(Boolean);
+    };
+
     all.getRecents = function() {
         if (!_recents) {
             // fetch from local storage
             _recents = (JSON.parse(context.storage('preset_recents')) || [])
                 .reduce(function(output, d) {
                     var item = ribbonItemForMinified(d, 'recent');
-                    if (item) output.push(item);
+                    if (item && item.preset.addable()) output.push(item);
                     return output;
                 }, []);
         }
         return _recents;
     };
 
-    all.removeRecent = function(preset, geometry) {
-        var item = all.recentMatching(preset, geometry);
+    all.toggleFavorite = function(preset) {
+        var favs = all.getFavorites();
+        var favorite = all.favoriteMatching(preset);
+        if (favorite) {
+            favs.splice(favs.indexOf(favorite), 1);
+        } else {
+            // only allow 10 favorites
+            if (favs.length === 10) {
+                // remove the last favorite (last in, first out)
+                favs.pop();
+            }
+            // append array
+            favs.push(RibbonItem(preset, 'favorite'));
+        }
+        setFavorites(favs);
+    };
+
+    all.removeFavorite = function(preset) {
+        var item = all.favoriteMatching(preset);
+        if (item) {
+            var items = all.getFavorites();
+            items.splice(items.indexOf(item), 1);
+            setFavorites(items);
+        }
+    };
+
+    all.removeRecent = function(preset) {
+        var item = all.recentMatching(preset);
         if (item) {
             var items = all.getRecents();
             items.splice(items.indexOf(item), 1);
@@ -397,11 +469,19 @@ export function presetIndex(context) {
         }
     };
 
-    all.recentMatching = function(preset, geometry) {
-        geometry = all.fallback(geometry).id;
+    all.favoriteMatching = function(preset) {
+        var favs = all.getFavorites();
+        for (var index in favs) {
+            if (favs[index].matches(preset)) {
+                return favs[index];
+            }
+        }
+        return null;
+    };
+    all.recentMatching = function(preset) {
         var items = all.getRecents();
         for (var index in items) {
-            if (items[index].matches(preset, geometry)) {
+            if (items[index].matches(preset)) {
                 return items[index];
             }
         }
@@ -416,30 +496,44 @@ export function presetIndex(context) {
         return items;
     };
 
-    all.moveRecent = function(item, beforeItem) {
-        var recents = all.getRecents();
-        var fromIndex = recents.indexOf(item);
-        var toIndex = recents.indexOf(beforeItem);
-        var items = all.moveItem(recents, fromIndex, toIndex);
-        if (items) setRecents(items);
+    all.addFavorite = function(preset, besidePreset, after) {
+        var favorites = all.getFavorites();
+
+        var beforeItem = all.favoriteMatching(besidePreset);
+        var toIndex = favorites.indexOf(beforeItem);
+        if (after) toIndex += 1;
+
+        var newItem = RibbonItem(preset, 'favorite');
+        favorites.splice(toIndex, 0, newItem);
+        setFavorites(favorites);
     };
 
-    all.setMostRecent = function(preset, geometry) {
+    all.addRecent = function(preset, besidePreset, after) {
+        var recents = all.getRecents();
+
+        var beforeItem = all.recentMatching(besidePreset);
+        var toIndex = recents.indexOf(beforeItem);
+        if (after) toIndex += 1;
+
+        var newItem = RibbonItem(preset, 'recent');
+        recents.splice(toIndex, 0, newItem);
+        setRecents(recents);
+    };
+
+    all.setMostRecent = function(preset) {
         if (context.inIntro()) return;
         if (preset.searchable === false) return;
 
-        geometry = all.fallback(geometry).id;
-
         var items = all.getRecents();
-        var item = all.recentMatching(preset, geometry);
+        var item = all.recentMatching(preset);
         if (item) {
             items.splice(items.indexOf(item), 1);
         } else {
-            item = RibbonItem(preset, geometry, 'recent');
+            item = RibbonItem(preset, 'recent');
         }
         // allow 30 recents
         if (items.length === 30) {
-            // remove the last recent (first in, first out)
+            // remove the last favorite (first in, first out)
             items.pop();
         }
         // prepend array

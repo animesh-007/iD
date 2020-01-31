@@ -10,6 +10,7 @@ const YAML = require('js-yaml');
 
 const fieldSchema = require('./data/presets/schema/field.json');
 const presetSchema = require('./data/presets/schema/preset.json');
+const groupSchema = require('./data/presets/schema/group.json');
 const nsi = require('name-suggestion-index');
 const deprecated = require('./data/deprecated.json').dataDeprecated;
 
@@ -51,12 +52,23 @@ function buildData() {
   // Translation strings
   let tstrings = {
     categories: {},
+    groups: {},
     fields: {},
     presets: {}
   };
 
   // Font Awesome icons used
   let faIcons = {
+    'fas-smile-beam': {},
+    'fas-grin-beam': {},
+    'fas-laugh-beam': {},
+    'fas-sun': {},
+    'fas-moon': {},
+    'fas-edit': {},
+    'fas-map-marked-alt': {},
+    'fas-toolbox': {},
+    'fas-clock': {},
+    'fas-birthday-cake': {},
     'fas-i-cursor': {},
     'fas-lock': {},
     'fas-long-arrow-alt-right': {},
@@ -82,6 +94,7 @@ function buildData() {
     'svg/fontawesome/*.svg',
   ]);
 
+  var groups = generateGroups(tstrings);
   let categories = generateCategories(tstrings, faIcons, tnpIcons);
   let fields = generateFields(tstrings, faIcons, tnpIcons, searchableFieldIDs);
   let presets = generatePresets(tstrings, faIcons, tnpIcons, searchableFieldIDs);
@@ -101,6 +114,7 @@ function buildData() {
     writeFileProm('data/presets/fields.json', prettyStringify({ fields: fields }, { maxLength: 9999 }) ),
     writeFileProm('data/presets/presets.json', prettyStringify({ presets: presets }, { maxLength: 9999 }) ),
     writeFileProm('data/presets.yaml', translationsToYAML(translations) ),
+    writeFileProm('data/presets/groups.json', prettyStringify({ groups: groups }, { maxLength: 1000 })),
     writeFileProm('data/taginfo.json', prettyStringify(taginfo, { maxLength: 9999 }) ),
     writeFileProm('data/territory-languages.json', prettyStringify({ dataTerritoryLanguages: territoryLanguages }, { maxLength: 9999 }) ),
     writeEnJson(tstrings),
@@ -211,6 +225,35 @@ function generateFields(tstrings, faIcons, tnpIcons, searchableFieldIDs) {
   });
 
   return fields;
+}
+
+function generateGroups(tstrings) {
+  let groups = {};
+  glob.sync(__dirname + '/data/presets/groups/**/*.json').forEach(file => {
+    let group = read(file);
+    let id = stripLeadingUnderscores(file.match(/presets\/groups\/([^.]*)\.json/)[1]);
+    validate(file, group, groupSchema);
+
+    let t = {};
+    if (group.name) {
+      t.name = group.name;
+    }
+    if (group.description) {
+      t.description = group.description;
+    }
+    if (Object.keys(t).length > 0) {
+      tstrings.groups[id] = t;
+    }
+
+    if (group.note) {
+      // notes are only used for developer documentation
+      delete group.note;
+    }
+
+    groups[id] = group;
+  });
+
+  return groups;
 }
 
 

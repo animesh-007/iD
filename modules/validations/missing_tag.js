@@ -98,10 +98,7 @@ export function validationMissingTag(context) {
 
                 fixes.push(new validationIssueFix({
                     icon: 'iD-icon-search',
-                    title: t('issues.fix.' + selectFixType + '.title'),
-                    onClick: function(context) {
-                        context.ui().sidebar.showPresetList();
-                    }
+                    title: t('issues.fix.' + selectFixType + '.title')
                 }));
 
                 var deleteOnClick;

@@ -19,15 +19,11 @@ import { modeDragNote } from './drag_note';
 import { osmNode, osmWay } from '../osm';
 import * as Operations from '../operations/index';
 import { uiEditMenu } from '../ui/edit_menu';
-import { uiSelectionList } from '../ui/selection_list';
 import { uiCmd } from '../ui/cmd';
 import {
     utilArrayIntersection, utilDeepMemberSelector, utilEntityOrDeepMemberSelector,
     utilEntitySelector, utilKeybinding
 } from '../util';
-
-// deprecation warning - Radial Menu to be removed in iD v3
-import { uiRadialMenu } from '../ui/radial_menu';
 
 
 var _relatedParent;
@@ -188,13 +184,8 @@ export function modeSelect(context, selectedIDs) {
 
 
     function toggleMenu() {
-        // deprecation warning - Radial Menu to be removed in iD v3
-        if (d3_select('.edit-menu, .radial-menu').empty()) {
-            positionMenu();
-            showMenu();
-        } else {
-            closeMenu();
-        }
+        positionMenu();
+        showMenu();
     }
 
 
@@ -245,6 +236,30 @@ export function modeSelect(context, selectedIDs) {
 
     var operations = [];
 
+    mode.operations = function() {
+        return operations;
+    };
+
+    function scheduleMissingMemberDownload() {
+        var missingMemberIDs = new Set();
+        selectedIDs.forEach(function(id) {
+            var entity = context.hasEntity(id);
+            if (!entity || entity.type !== 'relation') return;
+
+            entity.members.forEach(function(member) {
+                if (!context.hasEntity(member.id)) {
+                    missingMemberIDs.add(member.id);
+                }
+            });
+        });
+
+        if (missingMemberIDs.size) {
+            var missingMemberIDsArray = Array.from(missingMemberIDs)
+                .slice(0, 150); // limit number of members downloaded at once to avoid blocking iD
+            context.loadEntities(missingMemberIDsArray);
+        }
+    }
+
     function loadOperations() {
 
         operations.forEach(function(operation) {
@@ -261,14 +276,7 @@ export function modeSelect(context, selectedIDs) {
         // don't allow delete if downgrade is available
         var lastOperation = !context.inIntro() && downgradeOperation.available() ? downgradeOperation : Operations.operationDelete(selectedIDs, context);
 
-        // deprecation warning - Radial Menu to be removed in iD v3
-        var isRadialMenu = context.storage('edit-menu-style') === 'radial';
-        if (isRadialMenu) {
-            operations = operations.slice(0,7);
-            operations.unshift(lastOperation);
-        } else {
-            operations.push(lastOperation);
-        }
+        operations.push(lastOperation);
 
         operations.forEach(function(operation) {
             if (operation.behavior) {
@@ -276,10 +284,7 @@ export function modeSelect(context, selectedIDs) {
             }
         });
 
-        // deprecation warning - Radial Menu to be removed in iD v3
-        editMenu = isRadialMenu
-            ? uiRadialMenu(context, operations)
-            : uiEditMenu(context, operations);
+        editMenu = uiEditMenu(context, operations);
 
     }
 
@@ -287,6 +292,10 @@ export function modeSelect(context, selectedIDs) {
     mode.enter = function() {
         if (!checkSelectedIDs()) return;
 
+        // if this selection includes relations, fetch their members
+        scheduleMissingMemberDownload();
+
+        // ensure that selected features are rendered even if they would otherwise be hidden
         context.features().forceVisible(selectedIDs);
 
         loadOperations();
@@ -305,9 +314,6 @@ export function modeSelect(context, selectedIDs) {
 
         d3_select(document)
             .call(keybinding);
-
-        context.ui().sidebar
-            .select(singular() ? singular().id : null, _newFeature);
 
         context.history()
             .on('change.select', function() {
@@ -331,11 +337,6 @@ export function modeSelect(context, selectedIDs) {
 
 
         selectElements();
-
-        if (selectedIDs.length > 1) {
-            var entities = uiSelectionList(context, selectedIDs);
-            context.ui().sidebar.show(entities);
-        }
 
         if (_follow) {
             var extent = geoExtent();
@@ -600,7 +601,6 @@ export function modeSelect(context, selectedIDs) {
             .classed('related', false);
 
         context.map().on('drawn.select', null);
-        context.ui().sidebar.hide();
         context.features().forceVisible([]);
 
         var entity = singular();

@@ -70,11 +70,6 @@ export function uiIntro(context) {
         var caches = osm && osm.caches();
         var baseEntities = context.history().graph().base().entities;
 
-        // Show sidebar and disable the sidebar resizing button
-        // (this needs to be before `context.inIntro(true)`)
-        context.ui().sidebar.expand();
-        d3_selectAll('button.sidebar-toggle').classed('disabled', true);
-
         // Block saving
         context.inIntro(true);
 
@@ -153,7 +148,6 @@ export function uiIntro(context) {
             curtain.remove();
             navwrap.remove();
             d3_selectAll('#map .layer-background').style('opacity', opacity);
-            d3_selectAll('button.sidebar-toggle').classed('disabled', false);
             if (osm) { osm.toggle(true).reset().caches(caches); }
             context.history().reset().merge(Object.values(baseEntities));
             context.background().baseLayerSource(background);
